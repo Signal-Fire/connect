@@ -1,0 +1,27 @@
+{
+  "name": "@signal-fire/connect",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Slim client for Signal Fire Server",
+  "main": "./dist/index.js",
+  "author": "Michiel van der Velde <michiel@michielvdvelde.nl>",
+  "homepage": "http://github.com/Signal-Fire/connect",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Signal-Fire/connect.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "webrtc",
+    "signal-fire",
+    "datachannel",
+    "peer",
+    "ice"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "nanoid": "^3.1.22"
+  }
+}
