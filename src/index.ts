@@ -23,6 +23,13 @@ export interface Response {
   }
 }
 
+export type ConnectionState = 'new'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'closing'
+  | 'closed'
+
 export type ConnectInit = {
   reconnectOnClose?: boolean
   reconnectOnError?: boolean
@@ -43,6 +50,7 @@ export const PROTOCOL = 'Signal-Fire@3'
 
 export default class Connect extends EventTarget {
   public readonly id?: string
+  public readonly connectionState: ConnectionState = 'new'
   private socket: WebSocket | null = null
   private hadError = false
   private readonly pendingRequests: Map<string, (response: Response) => void> = new Map()
@@ -59,6 +67,9 @@ export default class Connect extends EventTarget {
     if (this.socket) {
       throw new Error('socket already created')
     }
+
+    // @ts-expect-error
+    this.connectionState = 'connecting'
 
     return new Promise<void>((resolve, reject) => {
       const removeListeners = () => {
@@ -117,6 +128,9 @@ export default class Connect extends EventTarget {
   }
 
   public async close (code?: number, reason?: string): Promise<void> {
+    // @ts-expect-error
+    this.connectionState = 'closing'
+
     return new Promise<void>(resolve => {
       this.addEventListener('close', () => resolve(), { once: true })
       this.socket?.close(code, reason)
@@ -169,6 +183,9 @@ export default class Connect extends EventTarget {
 
   private handleConnected (id: string, socket: WebSocket): void {
     // @ts-expect-error
+    this.connectionState = 'connected'
+
+    // @ts-expect-error
     this.id = id
     this.socket = socket
 
@@ -220,6 +237,9 @@ export default class Connect extends EventTarget {
   }
 
   private handleCloseEvent (ev: CloseEvent): void {
+    // @ts-expect-error
+    this.connectionState = 'closed'
+
     const socket = this.socket as WebSocket
 
     socket.removeEventListener('message', this.handleMessageEvent)
@@ -252,6 +272,9 @@ export default class Connect extends EventTarget {
       const url = urlTransform instanceof Promise ? await urlTransform : urlTransform
 
       try {
+        // @ts-expect-error
+        this.connectionState = 'reconnecting'
+
         await this.connect(url)
         this.reconnectAttempts = 0
       } catch (e) {
@@ -260,6 +283,9 @@ export default class Connect extends EventTarget {
         }, this.config.reconnectInterval)
       }
     } catch (e) {
+      // @ts-expect-error
+      this.connectionState = 'closed'
+
       this.dispatchEvent(new CustomEvent<Error>('error', {
         detail: new Error(`unable to reconnect: ${e.message}`)
       }))
