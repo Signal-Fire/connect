@@ -5,9 +5,6 @@ Connect is a slim client for [Signal Fire Server](https://github.com/signal-fire
 > Connect is a **work-in-progress** and as such is not yet published to npm.
 > If you wish to take a crack at it, clone the respository.
 
-> **Note**: Connect uses version 3 of the Signal Fire protocol and is not
-> directly compatible with Signal Fire Server as of this time!
-
 ## Example
 
 This example uses [Signal Fire Peer](https://github.com/signal-fire/peer).
