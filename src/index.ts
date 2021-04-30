@@ -178,8 +178,23 @@ export default class Connect extends EventTarget {
   }
 
   private handleMessageEvent ({ data }: MessageEvent<any>): void {
-    // TODO: Add data validation
-    const message = JSON.parse(data)
+    if (typeof data !== 'string') {
+      this.dispatchEvent(new CustomEvent<Error>('error', {
+        detail: new Error('expected a string')
+      }))
+      return
+    }
+
+    let message: any
+
+    try {
+      message = JSON.parse(data)
+    } catch (e) {
+      this.dispatchEvent(new CustomEvent<Error>('error', {
+        detail: new Error('unable to parse message')
+      }))
+      return
+    }
 
     switch (message.cmd) {
       case 'offer':
