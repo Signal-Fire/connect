@@ -105,6 +105,7 @@ export default class Connect extends EventTarget {
           return
         }
 
+        this.previousUrl = url
         this.handleConnected(message.data.id, socket)
         resolve()
       }
