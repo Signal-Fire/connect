@@ -128,6 +128,10 @@ export default class Connect extends EventTarget {
   }
 
   public async close (code?: number, reason?: string): Promise<void> {
+    if (!this.socket) {
+      return
+    }
+
     // @ts-expect-error
     this.connectionState = 'closing'
 
