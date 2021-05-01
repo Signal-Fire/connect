@@ -219,7 +219,7 @@ export default class Connect extends EventTarget {
     }
 
     if (this.pendingRequests.has(message.id)) {
-      const resolve = this.pendingRequests.get(message.id)
+      const resolve = this.pendingRequests.get(message.id) as (response: Response) => void
       resolve(message)
       return
     }
