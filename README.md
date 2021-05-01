@@ -2,8 +2,11 @@
 
 Connect is a slim client for [Signal Fire Server](https://github.com/signal-fire/server).
 
-> Connect is a **work-in-progress** and as such is not yet published to npm.
-> If you wish to take a crack at it, clone the respository.
+## Install
+
+```
+> npm i @signal-fire/connect
+```
 
 ## Example
 

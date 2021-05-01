@@ -1,7 +1,6 @@
 {
   "name": "@signal-fire/connect",
   "version": "0.0.1",
-  "private": true,
   "description": "Slim client for Signal Fire Server",
   "main": "./dist/index.js",
   "author": "Michiel van der Velde <michiel@michielvdvelde.nl>",
