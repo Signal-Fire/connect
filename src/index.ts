@@ -288,7 +288,7 @@ export default class Connect extends EventTarget {
           }))
           break
         default:
-          this.dispatchEvent(new CustomEvent('command', {
+          this.dispatchEvent(new CustomEvent(message.cmd, {
             detail: message
           }))
           break
