@@ -224,6 +224,13 @@ export default class Connect extends EventTarget {
       return
     }
 
+    if (!message.cmd) {
+      this.dispatchEvent(new CustomEvent<Error>('error', {
+        detail: new Error('expected cmd to be specified')
+      }))
+      return
+    }
+
     switch (message.cmd) {
       case 'offer':
         this.dispatchEvent(new CustomEvent<{ origin: string, offer: RTCSessionDescription }>('offer', {
@@ -238,6 +245,11 @@ export default class Connect extends EventTarget {
       case 'ice':
         this.dispatchEvent(new CustomEvent<{ origin: string, candidate: RTCSessionDescription }>('ice', {
           detail: { origin: message.origin, candidate: message.data.candidate }
+        }))
+        break
+      default:
+        this.dispatchEvent(new CustomEvent('message', {
+          detail: message
         }))
         break
     }
