@@ -13,10 +13,20 @@ Connect is a slim client for [Signal Fire Server](https://github.com/signal-fire
 This example uses [Signal Fire Peer](https://github.com/signal-fire/peer).
 
 ```typescript
-import Connect, { IncomingOfferEvent, IncomingAnswerEvent, IncomingICECanidateEvent } from './index'
+import Connect, { ConnectInit, IncomingOfferEvent, IncomingAnswerEvent, IncomingICECanidateEvent } from './index'
 import Peer, { OfferEvent, AnswerEvent, ICECandidateEvent } from '@signal-fire/peer'
 
-const connect = new Connect()
+// Initial configuration
+const init: ConnectInit {
+  reconnectOnClose: false,
+  reconnectOnError: true,
+  reconnectInterval: 2000,
+  reconnectAttempts: 2,
+  urlTransform: previousUrl => previousUrl
+}
+
+// Create a new Connect instance
+const connect = new Connect(init)
 
 // Connect to the signaling server
 await connect.connect('wss://rtc.example.com')
