@@ -156,7 +156,7 @@ export default class Connect extends EventTarget {
 
   public async sendAnswer (target: string, answer: RTCSessionDescription): Promise<void> {
     const response = await this.request({
-      cmd: 'offer',
+      cmd: 'answer',
       target,
       data: { answer }
     })
