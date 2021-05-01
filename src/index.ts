@@ -218,6 +218,12 @@ export default class Connect extends EventTarget {
       return
     }
 
+    if (this.pendingRequests.has(message.id)) {
+      const resolve = this.pendingRequests.get(message.id)
+      resolve(message)
+      return
+    }
+
     switch (message.cmd) {
       case 'offer':
         this.dispatchEvent(new CustomEvent<{ origin: string, offer: RTCSessionDescription }>('offer', {
