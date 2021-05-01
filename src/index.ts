@@ -200,7 +200,7 @@ export default class Connect extends EventTarget {
     }
   }
 
-  private async request (message: Request): Promise<ServerResponse> {
+  public async request (message: Request): Promise<ServerResponse> {
     const id = message.id = nanoid()
     return new Promise<ServerResponse>(resolve => {
       this.pendingRequests.set(id, resolve)
