@@ -247,6 +247,8 @@ export default class Connect extends EventTarget {
         this.pendingRequests.delete(message.id)
         resolve(message)
       }
+
+      return
     }
 
     if (isIncomingRequest(message)) {
