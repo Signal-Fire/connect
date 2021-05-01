@@ -45,9 +45,10 @@ export type ConnectionState = 'new'
 export type ConnectInit = {
   reconnectOnClose?: boolean
   reconnectOnError?: boolean
-  reconnectInterval?: number,
-  reconnectAttempts?: number,
+  reconnectInterval?: number
+  reconnectAttempts?: number
   urlTransform?: (previousUrl: string) => string | Promise<string>
+  configuration?: RTCConfiguration
 }
 
 const defaultInit: Required<ConnectInit> = {
@@ -55,7 +56,8 @@ const defaultInit: Required<ConnectInit> = {
   reconnectOnError: true,
   reconnectInterval: 2000,
   reconnectAttempts: 2,
-  urlTransform: previousUrl => previousUrl
+  urlTransform: previousUrl => previousUrl,
+  configuration: {}
 }
 
 export const PROTOCOL = 'Signal-Fire@3'
@@ -63,6 +65,7 @@ export const PROTOCOL = 'Signal-Fire@3'
 export default class Connect extends EventTarget {
   public readonly id?: string
   public readonly connectionState: ConnectionState = 'new'
+  public readonly configuration: RTCConfiguration
   private socket: WebSocket | null = null
   private hadError = false
   private readonly pendingRequests: Map<string, (response: ServerResponse) => void> = new Map()
@@ -73,6 +76,7 @@ export default class Connect extends EventTarget {
   public constructor (init: ConnectInit = {}) {
     super()
     this.config = { ...defaultInit, ...init }
+    this.configuration = this.config.configuration
   }
 
   public async connect (url: string): Promise<void> {
@@ -124,6 +128,14 @@ export default class Connect extends EventTarget {
         if (!message.data.id) {
           reject(new Error('expected welcome message to have our id'))
           return
+        }
+
+        if (message.data.configuration) {
+          // @ts-expect-error
+          this.configuration = {
+            ...this.configuration,
+            ...message.data.configuration
+          }
         }
 
         this.previousUrl = url
