@@ -15,12 +15,24 @@ export interface Request {
   }
 }
 
-export interface Response {
+export interface IncomingRequest extends Request {
+  origin: string
+}
+
+export interface ServerResponse {
   id: string,
   ok: boolean,
   data?: {
     message: string
   }
+}
+
+function isServerResponse (message: any): message is ServerResponse {
+  return typeof message.ok === 'boolean'
+}
+
+function isIncomingRequest (message: any): message is IncomingRequest {
+  return typeof message.origin === 'string'
 }
 
 export type ConnectionState = 'new'
@@ -53,7 +65,7 @@ export default class Connect extends EventTarget {
   public readonly connectionState: ConnectionState = 'new'
   private socket: WebSocket | null = null
   private hadError = false
-  private readonly pendingRequests: Map<string, (response: Response) => void> = new Map()
+  private readonly pendingRequests: Map<string, (response: ServerResponse) => void> = new Map()
   private readonly config: Required<ConnectInit>
   private previousUrl?: string
   private reconnectAttempts = 0
@@ -178,9 +190,9 @@ export default class Connect extends EventTarget {
     }
   }
 
-  private async request (message: Request): Promise<Response> {
+  private async request (message: Request): Promise<ServerResponse> {
     const id = message.id = nanoid()
-    return new Promise<Response>(resolve => {
+    return new Promise<ServerResponse>(resolve => {
       this.pendingRequests.set(id, resolve)
       this.socket?.send(JSON.stringify(message))
     })
@@ -207,7 +219,7 @@ export default class Connect extends EventTarget {
       return
     }
 
-    let message: any
+    let message: ServerResponse | IncomingRequest
 
     try {
       message = JSON.parse(data)
@@ -218,40 +230,45 @@ export default class Connect extends EventTarget {
       return
     }
 
-    if (this.pendingRequests.has(message.id)) {
-      const resolve = this.pendingRequests.get(message.id) as (response: Response) => void
-      resolve(message)
-      return
+    if (isServerResponse(message)) {
+      const resolve = this.pendingRequests.get(message.id)
+
+      if (resolve) {
+        this.pendingRequests.delete(message.id)
+        resolve(message)
+      }
     }
 
-    if (!message.cmd) {
-      this.dispatchEvent(new CustomEvent<Error>('error', {
-        detail: new Error('expected cmd to be specified')
-      }))
-      return
-    }
+    if (isIncomingRequest(message)) {
+      if (!message.cmd) {
+        this.dispatchEvent(new CustomEvent<Error>('error', {
+          detail: new Error('expected cmd to be specified')
+        }))
+        return
+      }
 
-    switch (message.cmd) {
-      case 'offer':
-        this.dispatchEvent(new CustomEvent<{ origin: string, offer: RTCSessionDescription }>('offer', {
-          detail: { origin: message.origin, offer: message.data.offer }
-        }))
-        break
-      case 'answer':
-        this.dispatchEvent(new CustomEvent<{ origin: string, answer: RTCSessionDescription }>('answer', {
-          detail: { origin: message.origin, answer: message.data.answer }
-        }))
-        break
-      case 'ice':
-        this.dispatchEvent(new CustomEvent<{ origin: string, candidate: RTCSessionDescription }>('ice', {
-          detail: { origin: message.origin, candidate: message.data.candidate }
-        }))
-        break
-      default:
-        this.dispatchEvent(new CustomEvent('message', {
-          detail: message
-        }))
-        break
+      switch (message.cmd) {
+        case 'offer':
+          this.dispatchEvent(new CustomEvent<{ origin: string, offer: RTCSessionDescription }>('offer', {
+            detail: { origin: message.origin, offer: <RTCSessionDescription>message.data.offer }
+          }))
+          break
+        case 'answer':
+          this.dispatchEvent(new CustomEvent<{ origin: string, answer: RTCSessionDescription }>('answer', {
+            detail: { origin: message.origin, answer: <RTCSessionDescription>message.data.answer }
+          }))
+          break
+        case 'ice':
+          this.dispatchEvent(new CustomEvent<{ origin: string, candidate: RTCIceCandidate }>('ice', {
+            detail: { origin: message.origin, candidate: <RTCIceCandidate>message.data.candidate }
+          }))
+          break
+        default:
+          this.dispatchEvent(new CustomEvent('command', {
+            detail: message
+          }))
+          break
+      }
     }
   }
 
