@@ -85,9 +85,18 @@ export default class Connect extends EventTarget {
 
     return new Promise<void>((resolve, reject) => {
       const removeListeners = () => {
+        socket.addEventListener('open', handleOpen)
         socket.removeEventListener('message', handleMessage)
         socket.removeEventListener('error', handleError)
         socket.removeEventListener('close', handleClose)
+      }
+
+      const handleOpen = () => {
+        if (socket.protocol !== PROTOCOL) {
+          removeListeners()
+          socket.close(1003, 'Invalid protocol')
+          reject(new Error(`expected protocol ${PROTOCOL} but got ${socket.protocol ?? 'none'}`))
+        }
       }
 
       const handleMessage = ({ data }: MessageEvent<any>) => {
@@ -134,6 +143,7 @@ export default class Connect extends EventTarget {
 
       const socket = new WebSocket(url, PROTOCOL)
 
+      socket.addEventListener('open', handleOpen)
       socket.addEventListener('message', handleMessage)
       socket.addEventListener('error', handleError)
       socket.addEventListener('close', handleClose)
