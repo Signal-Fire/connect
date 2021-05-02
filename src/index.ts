@@ -213,6 +213,12 @@ export default class Connect extends EventTarget {
   }
 
   public async request (message: Request): Promise<ServerResponse> {
+    if (!this.socket) {
+      throw new Error('no socket')
+    } else if (this.socket.readyState !== WebSocket.OPEN) {
+      throw new Error('socket not open')
+    }
+
     const id = message.id = nanoid()
     return new Promise<ServerResponse>(resolve => {
       this.pendingRequests.set(id, resolve)
