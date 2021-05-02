@@ -22,6 +22,7 @@ const init: ConnectInit {
   reconnectOnError: true,
   reconnectInterval: 2000,
   reconnectAttempts: 2,
+  /** Can be used to transform the URL prior to reconnecting. */
   urlTransform: previousUrl => previousUrl
 }
 
@@ -33,7 +34,8 @@ await connect.connect('wss://rtc.example.com')
 
 // Create a new peer
 const target = '<target id>'
-const connection = new RTCPeerConnection()
+// We pass the configuration given to us by the signaling server
+const connection = new RTCPeerConnection(connect.configuration)
 const peer = new Peer(connection)
 
 peer.addEventListener('offer', ({ detail: offer }: OfferEvent) => {
