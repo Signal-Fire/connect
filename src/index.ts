@@ -231,6 +231,8 @@ export default class Connect extends EventTarget {
     socket.addEventListener('message', this.handleMessageEvent)
     socket.addEventListener('error', this.handleErrorEvent)
     socket.addEventListener('close', this.handleCloseEvent)
+
+    this.dispatchEvent(new Event('connected'))
   }
 
   private handleMessageEvent ({ data }: MessageEvent<any>): void {
@@ -312,6 +314,8 @@ export default class Connect extends EventTarget {
 
     this.socket = null
 
+    this.dispatchEvent(new Event('closed'))
+
     if (this.config.reconnectAttempts > 0 && (this.config.reconnectOnClose || (this.hadError && this.config.reconnectOnError))) {
       this.hadError = false
 
@@ -338,6 +342,7 @@ export default class Connect extends EventTarget {
       try {
         // @ts-expect-error
         this.connectionState = 'reconnecting'
+        this.dispatchEvent(new Event('reconnecting'))
 
         await this.connect(url)
         this.reconnectAttempts = 0
@@ -349,6 +354,7 @@ export default class Connect extends EventTarget {
     } catch (e) {
       // @ts-expect-error
       this.connectionState = 'closed'
+      this.dispatchEvent(new Event('closed'))
 
       this.dispatchEvent(new CustomEvent<Error>('error', {
         detail: new Error(`unable to reconnect: ${e.message}`)
