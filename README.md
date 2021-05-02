@@ -35,7 +35,9 @@ const init: ConnectInit {
   reconnectInterval: 2000,
   reconnectAttempts: 2,
   /** Can be used to transform the URL prior to reconnecting. */
-  urlTransform: previousUrl => previousUrl
+  urlTransform: previousUrl => previousUrl,
+  /** WebRTC configuration, may be overwritten by server configuration. */
+  configuration: {}
 }
 
 // Create a new Connect instance
