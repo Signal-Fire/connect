@@ -84,8 +84,7 @@ export default class Connect extends EventTarget {
       throw new Error('socket already created')
     }
 
-    // @ts-expect-error
-    this.connectionState = 'connecting'
+    this.setConnectionState('connecting')
 
     return new Promise<void>((resolve, reject) => {
       const removeListeners = () => {
@@ -167,8 +166,7 @@ export default class Connect extends EventTarget {
       return
     }
 
-    // @ts-expect-error
-    this.connectionState = 'closing'
+    this.setConnectionState('closing')
 
     return new Promise<void>(resolve => {
       this.addEventListener('close', () => resolve(), { once: true })
@@ -309,8 +307,7 @@ export default class Connect extends EventTarget {
   }
 
   private handleCloseEvent (ev: CloseEvent): void {
-    // @ts-expect-error
-    this.connectionState = 'closed'
+    this.setConnectionState('closed')
 
     const socket = this.socket as WebSocket
 
@@ -346,8 +343,7 @@ export default class Connect extends EventTarget {
       const url = urlTransform instanceof Promise ? await urlTransform : urlTransform
 
       try {
-        // @ts-expect-error
-        this.connectionState = 'reconnecting'
+        this.setConnectionState('reconnecting')
         this.dispatchEvent(new Event('reconnecting'))
 
         await this.connect(url)
@@ -358,13 +354,23 @@ export default class Connect extends EventTarget {
         }, this.config.reconnectInterval)
       }
     } catch (e) {
-      // @ts-expect-error
-      this.connectionState = 'closed'
+      this.setConnectionState('closed')
       this.dispatchEvent(new Event('closed'))
 
       this.dispatchEvent(new CustomEvent<Error>('error', {
         detail: new Error(`unable to reconnect: ${e.message}`)
       }))
+    }
+  }
+
+  private setConnectionState (connectionState: ConnectionState) {
+    const previousConnectionState = this.connectionState
+
+    // @ts-expect-error
+    this.connectionState = connectionState
+
+    if (previousConnectionState !== connectionState) {
+      this.dispatchEvent(new Event('connectionstatechange'))
     }
   }
 }
