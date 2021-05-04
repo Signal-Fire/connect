@@ -1,12 +1,20 @@
 # Signal Fire Connect
 
-Connect is a slim client for [Signal Fire Server](https://github.com/signal-fire/server).
+Connect is a low-level client for [Signal Fire Server](https://github.com/signal-fire/server).
 
 ## Install
 
 ```
 > npm i @signal-fire/connect
 ```
+
+## Features
+
+* Connect uses vanilla __WebSockets__
+* Automatically __reconnect__ on close or error
+* Dispatches `description` events on incoming session descriptions
+* Dispatches `icecandidate` events on incoming ICE candidates
+* Send dession descriptions and ICE candidates to a remote peer
 
 ## Example
 
