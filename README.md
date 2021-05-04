@@ -16,8 +16,7 @@ around the native `RTCPeerConnection` which makes life easier.
 ```typescript
 import Connect, {
   ConnectInit,
-  IncomingOfferEvent,
-  IncomingAnswerEvent,
+  IncomingDescriptionEvent,
   IncomingICECanidateEvent
 } from '@signal-fire/connect'
 
@@ -75,13 +74,13 @@ connect.addEventListener('description', ({ detail: { origin, description } }: In
     if (description.type === 'offer') {
       peer.handleIncomingOffer(description)
     } else if (description.type === 'answer') {
-      peer.handcleIncomingAnswer(description)
+      peer.handleIncomingAnswer(description)
     }
   }
 })
 
 // Listen to incoming ICE candidates
-connect.addEventListener('ice', ({ detail: { origin, candidate } }: IncomingICECandidateEvent) => {
+connect.addEventListener('icecandidate', ({ detail: { origin, candidate } }: IncomingICECandidateEvent) => {
   if (origin === target) {
     peer.handleIncomingICECandidate(candidate)
   }
