@@ -1,8 +1,22 @@
 import { nanoid } from 'nanoid'
 
-export type IncomingDescriptionEvent = CustomEvent<{ origin: string, description: RTCSessionDescription }>
-export type IncomingICECandidateEvent = CustomEvent<{ origin: string, candidate: RTCIceCandidate }>
+import {
+  ConnectSessionDescriptionEvent,
+  ConnectIceCandidateEvent
+} from './events'
 
+import type {
+  Request,
+  IncomingRequest,
+  ServerResponse
+} from './interfaces'
+
+import {
+  isIncomingRequest,
+  isServerResponse
+} from './guards'
+
+/** Connect connection state. */
 export type ConnectionState = 'new'
   | 'connecting'
   | 'connected'
@@ -10,47 +24,24 @@ export type ConnectionState = 'new'
   | 'closing'
   | 'closed'
 
+/** Connect initialization options. */
 export type ConnectInit = {
+  /** Whether or not to reconnect after a normal close. */
   reconnectOnClose?: boolean,
+  /** Whether to reconnect after an error close. */
   reconnectOnError?: boolean,
+  /** Interval to wait between reconnect attempts. */
   reconnectInterval?: number,
+  /** Maximum number of reconnect attempts. */
   reconnectAttempts?: number,
+  /** Function to transform the URL upon reconnecting. */
   urlTransform?: (previousUrl: string) => string | Promise<string>
 }
 
-export interface Request {
-  id?: string,
-  cmd: string,
-  target: string,
-  data: {
-    offer?: RTCSessionDescription,
-    answer?: RTCSessionDescription,
-    candidate?: RTCIceCandidate
-  }
-}
-
-export interface IncomingRequest extends Request {
-  origin: string
-}
-
-export interface ServerResponse {
-  id: string,
-  ok: boolean,
-  data?: {
-    message: string
-  }
-}
-
+/** The protocol used by Connect. */
 export const PROTOCOL = 'Signal-Fire@3'
 
-function isServerResponse (message: any): message is ServerResponse {
-  return typeof message.ok === 'boolean'
-}
-
-function isIncomingRequest (message: any): message is IncomingRequest {
-  return typeof message.origin === 'string'
-}
-
+/** Default initial configuration. */
 const defaultInit: Required<ConnectInit> = {
   reconnectOnClose: false,
   reconnectOnError: true,
@@ -97,8 +88,20 @@ export default class Connect extends EventTarget {
     this.urlTransform = urlTransform
   }
 
-  public async connect (url: string): Promise<void> {
-    if (![ 'new', 'closed', 'reconnecting' ].includes(this.connectionState)) {
+  /**
+   * Connect to the signaling server.
+   * @param url The URL to the signaling server
+   * @param reconnect Whether this is a reconnect attempt (default false)
+   * @returns When the socket had successfully connected
+   */
+  public async connect (url: string, reconnect = false): Promise<void> {
+    const validConnectionStates = [ 'new', 'closed' ]
+
+    if (reconnect) {
+      validConnectionStates.push('reconnecting')
+    }
+
+    if (!validConnectionStates.includes(this.connectionState)) {
       throw new Error(`invalid connection state: ${this.connectionState}`)
     } else if (this.socket) {
       throw new Error('socket exists')
@@ -109,7 +112,9 @@ export default class Connect extends EventTarget {
       this.reconnectTimeout = undefined
     }
 
-    this.setConnectionState('connecting')
+    if (this.connectionState !== 'reconnecting') {
+      this.setConnectionState('connecting')
+    }
 
     return new Promise<void>((resolve, reject) => {
       const removeListeners = () => {
@@ -191,6 +196,12 @@ export default class Connect extends EventTarget {
     })
   }
 
+  /**
+   * Close the connection to the signaling server.
+   * @param code The close code
+   * @param reason The human-readable reason
+   * @returns When the socket has closed
+   */
   public async close (code?: number, reason?: string): Promise<void> {
     if (!this.socket) {
       return
@@ -204,6 +215,8 @@ export default class Connect extends EventTarget {
 
   /**
    * Send an offer to the remote peer.
+   * This method remains for backward compatibility.
+   * @deprecated Use `sendDescription()` instead.
    * @param target The target ID
    * @param offer The session description representing the offer
    */
@@ -213,6 +226,8 @@ export default class Connect extends EventTarget {
 
   /**
    * Send an answer to the remote peer.
+   * This method remains for backward compatibility.
+   * @deprecated Use `sendDescription()` instead.
    * @param target The target ID
    * @param answer The session description representing the answer
    */
@@ -248,7 +263,7 @@ export default class Connect extends EventTarget {
    * @param target The target ID
    * @param candidate The ICE candidate
    */
-  public async sendICECandidate (target: string, candidate: RTCIceCandidate): Promise<void> {
+  public async sendIceCandidate (target: string, candidate: RTCIceCandidate): Promise<void> {
     const response = await this.request({
       cmd: 'ice',
       target,
@@ -338,19 +353,22 @@ export default class Connect extends EventTarget {
 
       switch (message.cmd) {
         case 'offer':
-          this.dispatchEvent(new CustomEvent<{ origin: string, description: RTCSessionDescription }>('description', {
-            detail: { origin: message.origin, description: message.data.offer as RTCSessionDescription }
-          }))
+          this.dispatchEvent(new ConnectSessionDescriptionEvent(
+            message.origin,
+            message.data.offer as RTCSessionDescription)
+          )
           break
         case 'answer':
-          this.dispatchEvent(new CustomEvent<{ origin: string, description: RTCSessionDescription }>('description', {
-            detail: { origin: message.origin, description: message.data.answer as RTCSessionDescription }
-          }))
+          this.dispatchEvent(new ConnectSessionDescriptionEvent(
+            message.origin,
+            message.data.answer as RTCSessionDescription
+          ))
           break
         case 'ice':
-          this.dispatchEvent(new CustomEvent<{ origin: string, candidate: RTCIceCandidate }>('icecandidate', {
-            detail: { origin: message.origin, candidate: message.data.candidate as RTCIceCandidate }
-          }))
+          this.dispatchEvent(new ConnectIceCandidateEvent(
+            message.origin,
+            message.data.candidate as RTCIceCandidate
+          ))
           break
         default:
           this.dispatchEvent(new CustomEvent(message.cmd, {
@@ -387,7 +405,7 @@ export default class Connect extends EventTarget {
       const url = urlTransform instanceof Promise ? await urlTransform : urlTransform
 
       try {
-        await this.connect(url)
+        await this.connect(url, true)
       } catch (e) {
         this.setConnectionState('closed')
         this.reconnectAttemptsMade++
