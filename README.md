@@ -14,7 +14,7 @@ Connect is a low-level client for [Signal Fire Server](https://github.com/signal
 * Automatically __reconnect__ on close or error
 * Dispatches `description` events on incoming session descriptions
 * Dispatches `icecandidate` events on incoming ICE candidates
-* Send dession descriptions and ICE candidates to a remote peer
+* Send session descriptions and ICE candidates to a remote peer
 
 ## Example
 
