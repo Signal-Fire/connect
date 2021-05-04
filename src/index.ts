@@ -1,8 +1,22 @@
 import { nanoid } from 'nanoid'
 
-export type IncomingOfferEvent = CustomEvent<{ origin: string, offer: RTCSessionDescription }>
-export type IncomingAnswerEvent = CustomEvent<{ origin: string, answer: RTCSessionDescription }>
+export type IncomingDescriptionEvent = CustomEvent<{ origin: string, description: RTCSessionDescription }>
 export type IncomingICECandidateEvent = CustomEvent<{ origin: string, candidate: RTCIceCandidate }>
+
+export type ConnectionState = 'new'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'closing'
+  | 'closed'
+
+export type ConnectInit = {
+  reconnectOnClose?: boolean,
+  reconnectOnError?: boolean,
+  reconnectInterval?: number,
+  reconnectAttempts?: number,
+  urlTransform?: (previousUrl: string) => string | Promise<string>
+}
 
 export interface Request {
   id?: string,
@@ -27,6 +41,8 @@ export interface ServerResponse {
   }
 }
 
+export const PROTOCOL = 'Signal-Fire@3'
+
 function isServerResponse (message: any): message is ServerResponse {
   return typeof message.ok === 'boolean'
 }
@@ -35,60 +51,69 @@ function isIncomingRequest (message: any): message is IncomingRequest {
   return typeof message.origin === 'string'
 }
 
-export type ConnectionState = 'new'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'closing'
-  | 'closed'
-
-export type ConnectInit = {
-  reconnectOnClose?: boolean
-  reconnectOnError?: boolean
-  reconnectInterval?: number
-  reconnectAttempts?: number
-  urlTransform?: (previousUrl: string) => string | Promise<string>
-  configuration?: RTCConfiguration
-}
-
 const defaultInit: Required<ConnectInit> = {
   reconnectOnClose: false,
   reconnectOnError: true,
-  reconnectInterval: 2000,
-  reconnectAttempts: 2,
-  urlTransform: previousUrl => previousUrl,
-  configuration: {}
+  reconnectInterval: 2500,
+  reconnectAttempts: 5,
+  urlTransform: previousUrl => previousUrl
 }
-
-export const PROTOCOL = 'Signal-Fire@3'
 
 export default class Connect extends EventTarget {
   public readonly id?: string
   public readonly connectionState: ConnectionState = 'new'
-  public readonly configuration: RTCConfiguration
+  public readonly configuration: RTCConfiguration = {}
+
+  public readonly reconnectOnClose: boolean
+  public readonly reconnectOnError: boolean
+  public readonly reconnectInterval: number
+  public readonly reconnectAttempts: number
+  public readonly urlTransform: (previousUrl: string) => string | Promise<string>
+
   private socket: WebSocket | null = null
+  private readonly pendingRequests: Set<() => void> = new Set()
+  private readonly pendingResponses: Map<string, (response: ServerResponse) => void> = new Map()
+
   private hadError = false
-  private readonly pendingRequests: Map<string, (response: ServerResponse) => void> = new Map()
-  private readonly config: Required<ConnectInit>
+  private reconnectAttemptsMade = 0
+  private reconnectTimeout?: number
   private previousUrl?: string
-  private reconnectAttempts = 0
 
   public constructor (init: ConnectInit = {}) {
     super()
-    this.config = { ...defaultInit, ...init }
-    this.configuration = this.config.configuration
+
+    const {
+      reconnectOnClose,
+      reconnectOnError,
+      reconnectInterval,
+      reconnectAttempts,
+      urlTransform
+    } = { ...defaultInit, ...init }
+
+    this.reconnectOnClose = reconnectOnClose
+    this.reconnectOnError = reconnectOnError
+    this.reconnectInterval = reconnectInterval
+    this.reconnectAttempts = reconnectAttempts
+    this.urlTransform = urlTransform
   }
 
   public async connect (url: string): Promise<void> {
-    if (this.socket) {
-      throw new Error('socket already created')
+    if (![ 'new', 'closed', 'reconnecting' ].includes(this.connectionState)) {
+      throw new Error(`invalid connection state: ${this.connectionState}`)
+    } else if (this.socket) {
+      throw new Error('socket exists')
+    }
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout)
+      this.reconnectTimeout = undefined
     }
 
     this.setConnectionState('connecting')
 
     return new Promise<void>((resolve, reject) => {
       const removeListeners = () => {
-        socket.addEventListener('open', handleOpen)
+        socket.removeEventListener('open', handleOpen)
         socket.removeEventListener('message', handleMessage)
         socket.removeEventListener('error', handleError)
         socket.removeEventListener('close', handleClose)
@@ -97,16 +122,20 @@ export default class Connect extends EventTarget {
       const handleOpen = () => {
         if (socket.protocol !== PROTOCOL) {
           removeListeners()
-          socket.close(1003, 'Invalid protocol')
-          reject(new Error(`expected protocol ${PROTOCOL} but got ${socket.protocol ?? 'none'}`))
+          socket.close(1002, 'invalid protocol')
+          this.setConnectionState('closed')
+          reject(new Error(
+            `invalid protocol: expected ${PROTOCOL} but got ${socket.protocol ?? 'none'}`
+          ))
         }
       }
 
       const handleMessage = ({ data }: MessageEvent<any>) => {
-        removeListeners()
-
         if (typeof data !== 'string') {
-          reject(new Error('expected a string message'))
+          removeListeners()
+          socket.close(1003, 'expected a string')
+          this.setConnectionState('closed')
+          reject(new Error('expected a string'))
           return
         }
 
@@ -115,41 +144,42 @@ export default class Connect extends EventTarget {
         try {
           message = JSON.parse(data)
         } catch (e) {
+          removeListeners()
+          socket.close(1003, 'unable to parse message')
+          this.setConnectionState('closed')
           reject(new Error('unable to parse message'))
           return
         }
 
         if (message.cmd !== 'welcome') {
+          removeListeners()
+          socket.close(1003, 'expected welcome message')
+          this.setConnectionState('closed')
           reject(new Error('expected welcome message'))
           return
         }
 
-        if (!message.data.id) {
-          reject(new Error('expected welcome message to have our id'))
-          return
-        }
-
-        if (message.data.configuration) {
-          // @ts-expect-error
-          this.configuration = {
-            ...this.configuration,
-            ...message.data.configuration
-          }
-        }
-
+        removeListeners()
+        const { id, configuration } = message.data
         this.previousUrl = url
-        this.handleConnected(message.data.id, socket)
+        this.reconnectAttemptsMade = 0
+        this.hadError = false
+        this.handleOpen(socket, id, configuration)
         resolve()
       }
 
-      const handleError = (ev: any) => {
+      const handleError = () => {
         removeListeners()
-        reject(ev.error ?? ev)
+        this.setConnectionState('closed')
+        reject(new Error('socket error'))
       }
 
-      const handleClose = (ev: CloseEvent) => {
+      const handleClose = ({ code, reason }: CloseEvent) => {
         removeListeners()
-        reject(new Error(`socket closed unexpectedly with code ${ev.code} (${ev.reason ?? 'no reason'})`))
+        this.setConnectionState('closed')
+        reject(new Error(
+          `socket closed unexpectedly with code ${code} (${reason ?? 'no reason'})`
+        ))
       }
 
       const socket = new WebSocket(url, PROTOCOL)
@@ -166,38 +196,58 @@ export default class Connect extends EventTarget {
       return
     }
 
-    this.setConnectionState('closing')
-
     return new Promise<void>(resolve => {
-      this.addEventListener('close', () => resolve(), { once: true })
+      this.socket?.addEventListener('close', () => resolve, { once: true })
       this.socket?.close(code, reason)
     })
   }
 
+  /**
+   * Send an offer to the remote peer.
+   * @param target The target ID
+   * @param offer The session description representing the offer
+   */
   public async sendOffer (target: string, offer: RTCSessionDescription): Promise<void> {
-    const response = await this.request({
-      cmd: 'offer',
-      target,
-      data: { offer }
-    })
-
-    if (!response.ok) {
-      throw new Error(response.data?.message)
-    }
+    return this.sendDescription(target, offer)
   }
 
+  /**
+   * Send an answer to the remote peer.
+   * @param target The target ID
+   * @param answer The session description representing the answer
+   */
   public async sendAnswer (target: string, answer: RTCSessionDescription): Promise<void> {
+    return this.sendDescription(target, answer)
+  }
+
+  /**
+   * Send a session description to the remote peer.
+   * @param target The target ID
+   * @param description The session description
+   */
+  public async sendDescription (target: string, description: RTCSessionDescription): Promise<void> {
+    if (![ 'offer', 'answer' ].includes(description.type)) {
+      throw new Error(`unsupported session description type: ${description.type}`)
+    }
+
     const response = await this.request({
-      cmd: 'answer',
+      cmd: description.type,
       target,
-      data: { answer }
+      data: {
+        [description.type]: description
+      }
     })
 
-    if (!response.ok) {
-      throw new Error(response.data?.message)
+    if (!response.ok && response.data) {
+      throw new Error(response.data.message)
     }
   }
 
+  /**
+   * Send an ICE candidate to the remote peer.
+   * @param target The target ID
+   * @param candidate The ICE candidate
+   */
   public async sendICECandidate (target: string, candidate: RTCIceCandidate): Promise<void> {
     const response = await this.request({
       cmd: 'ice',
@@ -205,41 +255,50 @@ export default class Connect extends EventTarget {
       data: { candidate }
     })
 
-    if (!response.ok) {
-      throw new Error(response.data?.message)
+    if (!response.ok && response.data) {
+      throw new Error(response.data.message)
     }
   }
 
-  public async request (message: Request): Promise<ServerResponse> {
-    if (!this.socket) {
-      throw new Error('no socket')
-    } else if (this.socket.readyState !== WebSocket.OPEN) {
-      throw new Error('socket not open')
+  /**
+   * Send a request to the server.
+   * @returns The server response
+   */
+  public async request (request: Request): Promise<ServerResponse> {
+    if (this.connectionState !== 'connected') {
+      // Wait for when the connection is open again
+      // TODO: implement an (optional) timeout
+      await new Promise<void>(resolve => {
+        this.pendingRequests.add(resolve)
+      })
     }
 
-    const id = message.id = nanoid()
+    const id = request.id = request.id ?? nanoid()
     return new Promise<ServerResponse>(resolve => {
-      this.pendingRequests.set(id, resolve)
-      this.socket?.send(JSON.stringify(message))
+      this.pendingResponses.set(id, resolve)
+      this.socket?.send(JSON.stringify(request))
     })
   }
 
-  private handleConnected (id: string, socket: WebSocket): void {
-    // @ts-expect-error
-    this.connectionState = 'connected'
-
+  private handleOpen (socket: WebSocket, id: string, configuration: RTCConfiguration): void {
+    this.socket = socket
     // @ts-expect-error
     this.id = id
-    this.socket = socket
+    // @ts-expect-error
+    this.configuration = configuration ?? {}
 
-    socket.addEventListener('message', this.handleMessageEvent)
     socket.addEventListener('error', this.handleErrorEvent)
+    socket.addEventListener('message', this.handleMessageEvent)
     socket.addEventListener('close', this.handleCloseEvent)
 
-    this.dispatchEvent(new Event('connected'))
+    this.setConnectionState('connected')
   }
 
-  private handleMessageEvent ({ data }: MessageEvent<any>): void {
+  private handleErrorEvent (): void {
+    this.hadError = true
+  }
+
+  private handleMessageEvent({ data }: MessageEvent<any>) {
     if (typeof data !== 'string') {
       this.dispatchEvent(new CustomEvent<Error>('error', {
         detail: new Error('expected a string')
@@ -259,10 +318,10 @@ export default class Connect extends EventTarget {
     }
 
     if (isServerResponse(message)) {
-      const resolve = this.pendingRequests.get(message.id)
+      const resolve = this.pendingResponses.get(message.id)
 
       if (resolve) {
-        this.pendingRequests.delete(message.id)
+        this.pendingResponses.delete(message.id)
         resolve(message)
       }
 
@@ -279,18 +338,18 @@ export default class Connect extends EventTarget {
 
       switch (message.cmd) {
         case 'offer':
-          this.dispatchEvent(new CustomEvent<{ origin: string, offer: RTCSessionDescription }>('offer', {
-            detail: { origin: message.origin, offer: <RTCSessionDescription>message.data.offer }
+          this.dispatchEvent(new CustomEvent<{ origin: string, description: RTCSessionDescription }>('description', {
+            detail: { origin: message.origin, description: message.data.offer as RTCSessionDescription }
           }))
           break
         case 'answer':
-          this.dispatchEvent(new CustomEvent<{ origin: string, answer: RTCSessionDescription }>('answer', {
-            detail: { origin: message.origin, answer: <RTCSessionDescription>message.data.answer }
+          this.dispatchEvent(new CustomEvent<{ origin: string, description: RTCSessionDescription }>('description', {
+            detail: { origin: message.origin, description: message.data.answer as RTCSessionDescription }
           }))
           break
         case 'ice':
-          this.dispatchEvent(new CustomEvent<{ origin: string, candidate: RTCIceCandidate }>('ice', {
-            detail: { origin: message.origin, candidate: <RTCIceCandidate>message.data.candidate }
+          this.dispatchEvent(new CustomEvent<{ origin: string, candidate: RTCIceCandidate }>('icecandidate', {
+            detail: { origin: message.origin, candidate: message.data.candidate as RTCIceCandidate }
           }))
           break
         default:
@@ -302,75 +361,73 @@ export default class Connect extends EventTarget {
     }
   }
 
-  private handleErrorEvent (): void {
-    this.hadError = true
-  }
+  private handleCloseEvent (): void {
+    if (!this.socket) {
+      return
+    }
 
-  private handleCloseEvent (ev: CloseEvent): void {
-    this.setConnectionState('closed')
-
-    const socket = this.socket as WebSocket
-
-    socket.removeEventListener('message', this.handleMessageEvent)
-    socket.removeEventListener('error', this.handleErrorEvent)
-    socket.removeEventListener('close', this.handleCloseEvent)
+    this.socket.removeEventListener('error', this.handleErrorEvent)
+    this.socket.removeEventListener('message', this.handleMessageEvent)
+    this.socket.removeEventListener('close', this.handleCloseEvent)
 
     this.socket = null
 
-    this.dispatchEvent(new Event('closed'))
-
-    if (this.config.reconnectAttempts > 0 && (this.config.reconnectOnClose || (this.hadError && this.config.reconnectOnError))) {
-      this.hadError = false
-
-      setTimeout(() => {
+    if (this.reconnectOnClose || (this.hadError && this.reconnectOnError)) {
+      this.reconnectTimeout = setTimeout(() => {
         this.handleReconnect()
-      }, this.config.reconnectInterval)
+      }, this.reconnectInterval)
     }
   }
 
   private async handleReconnect (): Promise<void> {
-    this.reconnectAttempts++
-
-    if (this.reconnectAttempts > this.config.reconnectAttempts) {
-      this.dispatchEvent(new CustomEvent<Error>('error', {
-        detail: new Error('exceeded maximum reconnect attempts')
-      }))
-      return
-    }
+    this.setConnectionState('reconnecting')
 
     try {
-      const urlTransform = this.config.urlTransform(<string>this.previousUrl)
+      const urlTransform = this.urlTransform(this.previousUrl as string)
       const url = urlTransform instanceof Promise ? await urlTransform : urlTransform
 
       try {
-        this.setConnectionState('reconnecting')
-        this.dispatchEvent(new Event('reconnecting'))
-
         await this.connect(url)
-        this.reconnectAttempts = 0
       } catch (e) {
-        setTimeout(() => {
+        this.setConnectionState('closed')
+        this.reconnectAttemptsMade++
+
+        if (this.reconnectAttemptsMade > this.reconnectAttempts) {
+          this.dispatchEvent(new CustomEvent<Error>('error', {
+            detail: new Error('exceeded maximum reconnect attempts')
+          }))
+          return
+        }
+
+        this.reconnectTimeout = setTimeout(() => {
           this.handleReconnect()
-        }, this.config.reconnectInterval)
+        }, this.reconnectInterval)
       }
     } catch (e) {
       this.setConnectionState('closed')
-      this.dispatchEvent(new Event('closed'))
-
+      e.message = `unable to transform url: ${e.message}`
       this.dispatchEvent(new CustomEvent<Error>('error', {
-        detail: new Error(`unable to reconnect: ${e.message}`)
+        detail: e
       }))
     }
   }
 
-  private setConnectionState (connectionState: ConnectionState) {
-    const previousConnectionState = this.connectionState
+  private setConnectionState (connectionState: ConnectionState): void {
+    if (this.connectionState === connectionState) {
+      return
+    }
 
     // @ts-expect-error
     this.connectionState = connectionState
 
-    if (previousConnectionState !== connectionState) {
-      this.dispatchEvent(new Event('connectionstatechange'))
+    this.dispatchEvent(new Event(connectionState))
+    this.dispatchEvent(new Event('connectionstatechange'))
+
+    if (connectionState === 'connected' && this.pendingRequests.size) {
+      // Process pending requests
+      for (const resolve of this.pendingRequests) {
+        resolve()
+      }
     }
   }
 }

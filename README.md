@@ -32,8 +32,8 @@ import Peer, {
 const init: ConnectInit {
   reconnectOnClose: false,
   reconnectOnError: true,
-  reconnectInterval: 2000,
-  reconnectAttempts: 2,
+  reconnectInterval: 2500,
+  reconnectAttempts: 5,
   /** Can be used to transform the URL prior to reconnecting. */
   urlTransform: previousUrl => previousUrl,
   /** WebRTC configuration, may be overwritten by server configuration. */
@@ -69,17 +69,14 @@ peer.addEventListener('icecandidate', ({ candidate }: ICECandidateEvent) => {
   }
 })
 
-// Listen to incoming offers
-connect.addEventListener('offer', ({ detail: { origin, offer } }: IncomingOfferEvent) => {
+// Listen for incoming session descriptions
+connect.addEventListener('description', ({ detail: { origin, description } }: IncomingDescriptionEvent) => {
   if (origin === target) {
-    peer.handleIncomingOffer(offer)
-  }
-})
-
-// Listen to incomging answers
-connect.addEventListener('answer', ({ detail: { origin, answer } }: IncomingAnswerEvent) => {
-  if (origin === target) {
-    peer.handleIncomingAnswer(offer)
+    if (description.type === 'offer') {
+      peer.handleIncomingOffer(description)
+    } else if (description.type === 'answer') {
+      peer.handcleIncomingAnswer(description)
+    }
   }
 })
 
