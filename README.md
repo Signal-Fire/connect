@@ -16,8 +16,8 @@ around the native `RTCPeerConnection` which makes life easier.
 ```typescript
 import Connect, {
   ConnectInit,
-  IncomingDescriptionEvent,
-  IncomingICECanidateEvent
+  ConnectSessionDescriptionEvent,
+  ConnectIceCandidateEvent
 } from '@signal-fire/connect'
 
 import Peer, {
@@ -51,38 +51,38 @@ const target = '<target id>'
 const connection = new RTCPeerConnection(connect.configuration)
 const peer = new Peer(connection)
 
-peer.addEventListener('offer', ({ detail: offer }: OfferEvent) => {
+peer.addEventListener('offer', ({ detail: description }: OfferEvent) => {
   // send the offer to the remote peer through the signaling server
-  connect.sendOffer(target, offer).catch((err: Error) => { /* ... */ })
+  connect.sendDescription(target, description).catch(/* ... */)
 })
 
-peer.addEventListener('answer', ({ detail: answer }: AnswerEvent) => {
+peer.addEventListener('answer', ({ detail: description }: AnswerEvent) => {
   // send the answer to the remote peer through the signaling server
-  connect.sendAnswer(target, answer).catch((err: Error) => { /* ... */ })
+  connect.sendDescription(target, description).catch(/* ... */)
 })
 
 peer.addEventListener('icecandidate', ({ candidate }: ICECandidateEvent) => {
   if (candidate) {
     // send the ICE candidate to the remote peer through the signaling server
-    connect.sendICECandidate(target, candidate).catch((err: Error) => { /* ... */ })
+    connect.sendIceCandidate(target, candidate).catch(/* ... */)
   }
 })
 
 // Listen for incoming session descriptions
-connect.addEventListener('description', ({ detail: { origin, description } }: IncomingDescriptionEvent) => {
+connect.addEventListener('description', ({ origin, description }: ConnectSessionDescriptionEvent) => {
   if (origin === target) {
     if (description.type === 'offer') {
-      peer.handleIncomingOffer(description)
+      peer.handleIncomingOffer(description).catch(/* ... */)
     } else if (description.type === 'answer') {
-      peer.handleIncomingAnswer(description)
+      peer.handleIncomingAnswer(description).catch(/* ... */)
     }
   }
 })
 
 // Listen to incoming ICE candidates
-connect.addEventListener('icecandidate', ({ detail: { origin, candidate } }: IncomingICECandidateEvent) => {
+connect.addEventListener('icecandidate', ({ origin, candidate }: ConnectIceCandidateEvent) => {
   if (origin === target) {
-    peer.handleIncomingICECandidate(candidate)
+    peer.handleIncomingICECandidate(candidate).catch(/* ... */)
   }
 })
 ```
