@@ -95,6 +95,18 @@ connect.addEventListener('icecandidate', ({ origin, candidate }: ConnectIceCandi
 })
 ```
 
+## Questions
+
+### I'm getting the following error
+
+You may get the following (or similar) error:
+
+```
+Argument of type '(event: ConnectSessionDescriptionEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'
+```
+
+This is an open issue with TypeScript, see [Microsoft/TypeScript#28357](https://github.com/Microsoft/TypeScript/issues/28357). See the issue thread for possible temporary solutions.
+
 ## License
 
 Copyright 2021 Michiel van der Velde.
